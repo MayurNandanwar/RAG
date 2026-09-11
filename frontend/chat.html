@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>GenAI Chat</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .history-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #ddd;
+        }
+
+        .history-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 10px;
+            background: #f9f9f9;
+        }
+
+        .qa-pair {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: white;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+        }
+
+        .question {
+            color: #007bff;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .answer {
+            color: #28a745;
+            font-weight: bold;
+            margin-bottom: 5px;
+            margin-top: 8px;
+        }
+
+        .content {
+            color: #333;
+            line-height: 1.5;
+            margin-top: 5px;
+        }
+
+        .no-history {
+            text-align: center;
+            color: #999;
+            padding: 30px;
+        }
+
+        .stats {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            color: #0056b3;
+            font-weight: bold;
+        }
+
+        .history-btn {
+            background: #28a745;
+            margin-top: 10px;
+        }
+
+        .history-btn:hover {
+            background: #218838;
+        }
+
+        .loading-text {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h2>GenAI Chat</h2>
+
+        <textarea 
+            id="question"
+            placeholder="Ask something..."
+        ></textarea>
+
+        <button onclick="sendMessage()">
+            Send
+        </button>
+
+        <h3>Response</h3>
+
+        <div id="response">
+        </div>
+
+        <!-- History Section -->
+        <div class="history-section">
+            <button class="history-btn" onclick="fetchHistory()">
+                📜 Load Chat History
+            </button>
+
+            <div id="errorContainer"></div>
+            <div id="statsContainer" style="display: none;"></div>
+            <div id="historyContainer" class="history-container" style="display: none;"></div>
+        </div>
+
+        <button onclick="logout()">
+            Logout
+        </button>
+
+    </div>
+
+    <script src="script2.js"></script>
+    <script>
+        function decodeAccessToken(token) {
+            try {
+                // JWT format: header.payload.signature
+                const parts = token.split('.');
+                
+                if (parts.length !== 3) {
+                    throw new Error('Invalid token format');
+                }
+                
+                // Decode the payload (second part)
+                const payload = JSON.parse(atob(parts[1]));
+                
+                return payload;
+            } catch (error) {
+                console.error('Failed to decode token:', error);
+                return null;
+            }
+        }
+
+
+        async function fetchHistory() {
+            const historyContainer = document.getElementById('historyContainer');
+            const statsContainer = document.getElementById('statsContainer');
+            const errorContainer = document.getElementById('errorContainer');
+
+            // Clear previous state
+            errorContainer.innerHTML = '';
+            statsContainer.style.display = 'none';
+
+            try {
+                const accessToken = localStorage.getItem('access_token');
+
+                if (!accessToken ) {
+                    throw new Error('Please login first');
+                }
+
+                // Decode token to get user_id
+                const tokenData = decodeAccessToken(accessToken);
+                
+                if (!tokenData || !tokenData.sub) {
+                        throw new Error('Invalid token');
+                    }
+                const userId = tokenData.sub;
+
+                historyContainer.innerHTML = '<div class="loading-text">Loading history...</div>';
+                historyContainer.style.display = 'block';
+
+                // Call API
+                const response = await fetch(`http://localhost:8000/api/history/${userId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to fetch history');
+                }
+
+                const data = await response.json();
+
+                // Display stats
+                if (data.count > 0) {
+                    statsContainer.innerHTML = `
+                        <div class="stats">
+                            Total Q&A Pairs: ${data.count}
+                        </div>
+                    `;
+                    statsContainer.style.display = 'block';
+                }
+
+                // Display history
+                if (data.history.length === 0) {
+                    historyContainer.innerHTML = '<div class="no-history">No chat history found</div>';
+                } else {
+                    let html = '';
+                    data.history.forEach((item) => {
+                        if (item.type === 'que') {
+                            html += `
+                                <div class="qa-pair">
+                                    <div class="question">❓ Question:</div>
+                                    <div class="content">${escapeHtml(item.content)}</div>
+                            `;
+                        } else if (item.type === 'ans') {
+                            html += `
+                                    <div class="answer">✅ Answer:</div>
+                                    <div class="content">${escapeHtml(item.content)}</div>
+                                </div>
+                            `;
+                        }
+                    });
+                    historyContainer.innerHTML = html;
+                }
+
+            } catch (error) {
+                historyContainer.style.display = 'none';
+                errorContainer.innerHTML = `
+                    <div class="error">
+                        ❌ ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+
+</body>
+
+</html>
